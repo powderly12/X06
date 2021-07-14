@@ -1,9 +1,11 @@
 
 #include <WiFiNINA.h>
 
+
 char ssid[] = "36a Bow Lane";
 char pass[] = "letmein123";
 int a;
+
 
 // Left Motor connections
 char c;
@@ -19,6 +21,11 @@ const int REYE = 3; // INTERUPT
 const int LED = 13;
 int distance;
 long duration;
+bool switchs=true;
+String statement="object seen.";
+int timer1;
+int timer2;
+
 WiFiClient client;
 IPAddress server(192,168,159,196);
 
@@ -34,17 +41,14 @@ void setup() {
   IPAddress ip = WiFi.localIP();
   Serial.print("IP Address:");
   Serial.println(ip);
-
- // while(client.connect(server,5200)){
-    //Serial.println("Connecting...");
-    
-    //}
+  pinMode(LED, LOW);
   if (client.connect(server,5200)){
-    client.write("Banba is connected");
+    client.print("Banba is connected."); // successed connecting
+    pinMode(LED, HIGH);
     }else {
-      Serial.println("Fail");
-      pinMode(LED, HIGH);
-      }
+      Serial.print("Fail.");
+       pinMode(LED, LOW);
+     }
   
   c_previous='L';
   pinMode(in1, OUTPUT);
@@ -71,6 +75,12 @@ void forward () {  // PWM 0 = 0V (LOW) 255 = 5V HIGH SPEED VARIES INBETWEEN
   analogWrite(in2, 200);
   analogWrite(in3, 0);
   analogWrite(in4, 200);
+
+  timer2=millis();
+  if(abs(timer2-timer1)>500&&switchs==true){// this loops makes sure that it print after 0.5 s of stopping (bc the us sensor reports stoping alot before actually coming to a full stop)
+    client.print("Path Clear.");
+    switchs=false;
+    }
   }
 
 
@@ -98,10 +108,9 @@ void left() {
   analogWrite(in3, 0);
   analogWrite(in4, 0);
   
-  
   }
 
- int Objectdetected() {
+ int Objectdetected() {// US sensor
     digitalWrite(TRIG, LOW);
     delayMicroseconds(2);
     digitalWrite(TRIG, HIGH);
@@ -111,17 +120,28 @@ void left() {
     duration = pulseIn(ECHO, HIGH);
     distance = duration / 58;
     
-    if (distance<=15) {
-      client.write("stopping for obstacle at 15cm distance");
-      brakes ();
+    
+    if (distance<=10) {
+     timer1=millis();
+        
+     if (switchs==false &&abs(timer2-timer1)>500){ //same reasons the us sensor is unsure of the distance and repeat so we wait 0.5s to ensure the distance is definately less than 10cm
+        client.print(statement);
+        switchs=true; //switch is just to stop the "object seen" statement being repeated. more for the path clear statement in the forward function above
+        
+      }
+       
+       brakes ();
+       
       
+        return distance;
      }
-     return distance;
+
+      
 
 
   
   }
-int IR_Sensors (){
+int IR_Sensors (){ // checking the IR sensors status
    if (digitalRead( LEYE ) == HIGH  && digitalRead( REYE ) == HIGH){
         
         return 1;
@@ -150,21 +170,23 @@ int IR_Sensors (){
 void loop() {
 
    
-  Serial.write(WiFi.status());
-  c = client.read();
+  //WiFi.status();
+  c = client.read();// input from processing GUI
   
+
   
-  
-  if (c_previous!=c && c!=255){
-    c_previous=c;
+  if (c_previous!=c && c!=255){// makes sure the Command is not repeated and is not a  null character from the server
+    c_previous=c; 
     }
   
-  if (c_previous=='G') {
-    if (Objectdetected()>15) {
-     
+  if (c_previous=='G') { // only options for c_previous are G for go or S for stop
+    if (Objectdetected()>10) { //if the object detected is more than 10
+      // This series of if statements creates leveling in the programing so the ir sensors are only checked if the us sensor is more than 10cm away 
+      // and the Us sensor is only checked if the server says go. This reduces the processing power used at an instant and sensors are only called when needed
+      
         a=IR_Sensors ();
-
-        switch (a){
+        
+        switch (a){ // I used a switch statement just to mess around but it does the same thing and the series of if statements in IR_Sensors
           case 1 :
             forward ();
           break;
@@ -181,8 +203,10 @@ void loop() {
             brakes();
           break;
           }
+         
+          
      }
-  } else{
+  } else{ // if c_previous is S for stop
    
     brakes ();
     
